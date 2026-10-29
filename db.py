@@ -1,68 +1,52 @@
-"""
-Database setup for the Bookstore app.
+"""Database configuration for the Bookstore app.
 
-This file connects the app to the database using SQLAlchemy. It:
-- reads the database URL from the .env file,
-- creates the engine (the actual connection to the database),
-- creates a session factory used to talk to the database per request,
-- defines `Base`, the parent class all ORM models inherit from,
-- provides helpers to get a DB session (for FastAPI) and to create tables.
+Loads the database connection URL from the environment (.env file) so that
+the rest of the app can build its SQLAlchemy engine/session from it.
+Keeping the URL in the environment avoids hard-coding credentials in code.
 """
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine  # creates the DB engine
+from sqlalchemy.orm import sessionmaker, declarative_base  # session factory and ORM base class
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  # reads key=value pairs from a .env file into environment variables
 
-import os
+import os  # used to read environment variables
 
 
-# Load variables from the .env file into the environment,
-# so secrets like the DB URL aren't hard-coded in the source.
-load_dotenv()
+load_dotenv()  # load the .env file so os.getenv can see its values
 
-# Database connection string, e.g. postgresql://user:pass@host:5432/dbname
-SQLALCHEMY_DATABASE_URL: str | None = os.getenv(key="SQLALCHEMY_DATABASE_URL")
+SQLALCHEMY_DATABASE_URL = os.getenv("SQLALCHEMY_DATABASE_URL")  # DB connection string, kept in env to keep secrets out of code
 
-# The engine manages the pool of connections to the database.
-engine: Unknown = create_engine(SQLALCHEMY_DATABASE_URL)
+engine = create_engine(SQLALCHEMY_DATABASE_URL)  # manages the actual connection(s) to the database
 
-# Factory that creates new DB sessions.
-# autocommit=False: we commit changes explicitly, so nothing is saved by accident.
-# autoflush=False: changes aren't sent to the DB until we choose to, giving more control.
-SessionLocal: sessionmaker[Session] = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+# autocommit=False: we commit explicitly; autoflush=False: changes reach the DB only when we say so
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)  # factory creating one DB session per request
 
-# Base class for ORM models; SQLAlchemy uses it to track all tables we define.
-Base: Any = declarative_base()
+Base = declarative_base()  # parent class for all ORM models (e.g. Book in models.py)
 
 def get_db():
-    """
-    Provide a database session for a single request.
+    """Provide a database session for one request and always close it afterwards.
 
-    Input:  None (used as a FastAPI dependency via `Depends(get_db)`).
-    Output: Yields a SQLAlchemy `Session` object.
-
-    Why: Each request gets its own fresh session, and the `finally` block
-    guarantees the session is closed afterwards (even if an error occurs),
-    so connections are not leaked.
+    Input: none (used as a FastAPI dependency via Depends(get_db)).
+    Output: yields a SQLAlchemy Session object.
+    Why: guarantees every request gets its own session and that the connection
+    is released even if an error happens, preventing connection leaks.
     """
-    # Open a new session for this request.
-    db: Session = SessionLocal()
+
+    db = SessionLocal()  # open a new session for this request
+
     try:
-        # Hand the session to the route; execution pauses here until the request is done.
-        yield db
+        yield db  # hand the session to the endpoint that requested it
+    except Exception as e:
+        print(F"Exception: {e}")
     finally:
-        # Always close the session to return the connection to the pool.
-        db.close()
+        db.close()  # runs after the request ends (success or error) to free the connection
 
 def create_table():
-    """
-    Create all database tables defined by models inheriting from `Base`.
+    """Create all tables defined by our ORM models in the database.
 
-    Input:  None.
-    Output: None (tables are created in the database as a side effect).
-
-    Why: Lets the app set up its schema automatically on startup,
-    without writing SQL `CREATE TABLE` statements by hand.
+    Input: none.
+    Output: none (tables are created as a side effect; existing tables are left untouched).
+    Why: sets up the database schema on startup so we don't create tables by hand.
     """
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=engine)  # creates the table of every model inheriting Base, if missing

@@ -1,31 +1,45 @@
+"""Pydantic schemas (request/response shapes) for the Bookstore API.
+
+Schemas validate the data coming into the API and control the data going out.
+They are separate from the ORM models in models.py, which describe DB tables.
 """
-Database models for the Bookstore app.
+from pydantic import BaseModel  # gives us automatic type validation and JSON serialization
 
-Models are Python classes that map to database tables (SQLAlchemy ORM).
-Each class is a table and each attribute is a column, so we can read and
-write rows as normal Python objects instead of writing raw SQL.
-"""
+class BookBase(BaseModel):
+    """Fields shared by every book schema.
 
-from db import Base
-from sqlalchemy import Integer, Column, String
-
-class Book(Base):
+    Input: title, description, author (str) and year (int).
+    Output: a validated object; invalid types raise a validation error.
+    Why: defined once so BookCreate and Book don't repeat the same fields.
     """
-    ORM model for the "Books" table.
 
-    Why: Represents one book row in the database. Inheriting from `Base`
-    (defined in db.py) registers the table so `create_table()` can build it.
+    title:str  # book title
+    description: str  # short summary of the book
+    author: str  # author's name
+    year: int  # publication year
+
+
+class BookCreate(BookBase):
+    """Schema for the request body when creating a new book.
+
+    Input: same fields as BookBase (no id; the database generates it).
+    Output: a validated object ready to be saved as a Book row.
+    Why: the client must not choose the id, so it is left out of this schema.
     """
-    # Name of the table in the database
-    __tablename__ = "Books"
 
-    # Unique identifier for each book; primary key is auto-incremented and indexed for fast lookups
-    id: Column(Integer, primary_key=True, index=True)
-    # Book title; indexed to speed up searching by title
-    title: Column(String, index=True)
-    # Short summary of the book; indexed for faster searching
-    description: Column(String, index=True)
-    # Author of the book; indexed for faster searching
-    auth: Column(String, index=True)
-    # Year the book was published (no index, we don't search by it)
-    year: Column(Integer)
+    pass  # no extra fields needed; inherits everything from BookBase
+
+
+class Book(BookBase):
+    """Schema for a book returned by the API (response model).
+
+    Input: a Book ORM object from the database (or matching data).
+    Output: the book fields plus its id, serialized to JSON.
+    Why: clients need the id to reference a book later (get, update, delete).
+    """
+
+    id: int  # database-generated unique ID
+
+    class config:  # Pydantic settings for this schema
+        orm_mode = True  # allows reading data from ORM objects (attributes), not only dicts
+        from_attribute = True  # same purpose as orm_mode (its Pydantic v2 equivalent)
